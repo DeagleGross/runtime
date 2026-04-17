@@ -721,6 +721,7 @@ extern bool g_libSslUses32BitTime;
     FALLBACK_FUNCTION(SSL_CTX_set_security_level) \
     REQUIRED_FUNCTION(SSL_CTX_set_session_id_context) \
     REQUIRED_FUNCTION(SSL_CTX_set_verify) \
+    REQUIRED_FUNCTION(SSL_CTX_set_cert_verify_callback) \
     REQUIRED_FUNCTION(SSL_CTX_use_certificate) \
     REQUIRED_FUNCTION(SSL_CTX_use_PrivateKey) \
     REQUIRED_FUNCTION(SSL_do_handshake) \
@@ -731,6 +732,8 @@ extern bool g_libSslUses32BitTime;
     REQUIRED_FUNCTION(SSL_get_current_cipher) \
     REQUIRED_FUNCTION(SSL_get_error) \
     REQUIRED_FUNCTION(SSL_get_ex_data) \
+    REQUIRED_FUNCTION(SSL_get_ex_data_X509_STORE_CTX_idx) \
+    REQUIRED_FUNCTION(SSL_get_pending_cipher) \
     REQUIRED_FUNCTION(SSL_get_finished) \
     REQUIRED_FUNCTION(SSL_get_peer_cert_chain) \
     REQUIRED_FUNCTION(SSL_get_peer_finished) \
@@ -845,6 +848,7 @@ extern bool g_libSslUses32BitTime;
     REQUIRED_FUNCTION(X509_STORE_CTX_set_verify_cb) \
     REQUIRED_FUNCTION(X509_STORE_CTX_set_ex_data) \
     REQUIRED_FUNCTION(X509_STORE_CTX_get_ex_data) \
+    REQUIRED_FUNCTION(X509_STORE_CTX_set_error) \
     REQUIRED_FUNCTION(X509_STORE_free) \
     FALLBACK_FUNCTION(X509_STORE_get0_param) \
     REQUIRED_FUNCTION(X509_STORE_new) \
@@ -1297,6 +1301,7 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
 #define SSL_CTX_set_security_level SSL_CTX_set_security_level_ptr
 #define SSL_CTX_set_session_id_context SSL_CTX_set_session_id_context_ptr
 #define SSL_CTX_set_verify SSL_CTX_set_verify_ptr
+#define SSL_CTX_set_cert_verify_callback SSL_CTX_set_cert_verify_callback_ptr
 #define SSL_CTX_use_certificate SSL_CTX_use_certificate_ptr
 #define SSL_CTX_use_PrivateKey SSL_CTX_use_PrivateKey_ptr
 #define SSL_do_handshake SSL_do_handshake_ptr
@@ -1308,9 +1313,11 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
 #define SSL_get_current_cipher SSL_get_current_cipher_ptr
 #define SSL_get_error SSL_get_error_ptr
 #define SSL_get_ex_data SSL_get_ex_data_ptr
+#define SSL_get_ex_data_X509_STORE_CTX_idx SSL_get_ex_data_X509_STORE_CTX_idx_ptr
 #define SSL_get_finished SSL_get_finished_ptr
 #define SSL_get_peer_cert_chain SSL_get_peer_cert_chain_ptr
 #define SSL_get_peer_finished SSL_get_peer_finished_ptr
+#define SSL_get_pending_cipher SSL_get_pending_cipher_ptr
 #define SSL_get_servername SSL_get_servername_ptr
 #define SSL_get_SSL_CTX SSL_get_SSL_CTX_ptr
 #define SSL_get_version SSL_get_version_ptr
@@ -1321,7 +1328,6 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
 #define SSL_load_error_strings SSL_load_error_strings_ptr
 #define SSL_new SSL_new_ptr
 #define SSL_peek SSL_peek_ptr
-#define SSL_state_string_long SSL_state_string_long_ptr
 #define SSL_read SSL_read_ptr
 #define SSL_renegotiate SSL_renegotiate_ptr
 #define SSL_renegotiate_pending SSL_renegotiate_pending_ptr
@@ -1423,6 +1429,7 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
 #define X509_STORE_CTX_set_verify_cb X509_STORE_CTX_set_verify_cb_ptr
 #define X509_STORE_CTX_set_ex_data X509_STORE_CTX_set_ex_data_ptr
 #define X509_STORE_CTX_get_ex_data X509_STORE_CTX_get_ex_data_ptr
+#define X509_STORE_CTX_set_error X509_STORE_CTX_set_error_ptr
 #define X509_STORE_free X509_STORE_free_ptr
 #define X509_STORE_get0_param X509_STORE_get0_param_ptr
 #define X509_STORE_new X509_STORE_new_ptr
