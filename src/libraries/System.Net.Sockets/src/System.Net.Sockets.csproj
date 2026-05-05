@@ -204,6 +204,12 @@
     <Compile Include="System\Net\Sockets\SocketAsyncEngine.Unix.cs" />
     <Compile Include="$(CommonPath)Interop\Unix\System.Native\Interop.SocketEvent.cs"
              Link="Common\Interop\Unix\System.Native\Interop.SocketEvent.cs" />
+    <Compile Include="$(CommonPath)Interop\Unix\System.Native\Interop.SocketEventWithTimeout.cs"
+             Link="Common\Interop\Unix\System.Native\Interop.SocketEventWithTimeout.cs" />
+    <Compile Include="System\Threading\SafePollHandle.cs" />
+    <Compile Include="System\Threading\PollEvents.cs" />
+    <Compile Include="System\Threading\PollNotification.cs" />
+    <Compile Include="System\Threading\PollRegistrationOptions.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'unix' or '$(TargetPlatformIdentifier)' == 'wasi' or '$(TargetPlatformIdentifier)' == 'osx' or '$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'tvos'">

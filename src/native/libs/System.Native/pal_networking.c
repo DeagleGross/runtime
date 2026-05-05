@@ -3553,6 +3553,177 @@ int32_t SystemNative_WaitForSocketEvents(intptr_t port, SocketEvent* buffer, int
     return WaitForSocketEventsInner(fd, buffer, count);
 }
 
+#if HAVE_EPOLL
+static int32_t WaitForSocketEventsWithTimeoutInner(int32_t port, SocketEvent* buffer, int32_t* count, int32_t timeoutMs)
+{
+    assert(buffer != NULL);
+    assert(count != NULL);
+    assert(*count >= 0);
+
+    struct epoll_event* events = (struct epoll_event*)buffer;
+    int numEvents;
+    while ((numEvents = epoll_wait(port, events, *count, timeoutMs)) < 0 && errno == EINTR);
+    if (numEvents == -1)
+    {
+        *count = 0;
+        return SystemNative_ConvertErrorPlatformToPal(errno);
+    }
+
+    if (numEvents == 0)
+    {
+        // Timeout — no events. This is not an error.
+        *count = 0;
+        return Error_SUCCESS;
+    }
+
+    assert(numEvents <= *count);
+
+    for (int i = numEvents - 1; i >= 0; i--)
+    {
+        // Convert native epoll_event to SocketEvent, processing from back to front to avoid overwriting.
+        SocketEvent sae;
+        ConvertEventEPollToSocketAsync(&sae, &events[i]);
+        buffer[i] = sae;
+    }
+
+    *count = numEvents;
+    return Error_SUCCESS;
+}
+#elif HAVE_KQUEUE
+static int32_t WaitForSocketEventsWithTimeoutInner(int32_t port, SocketEvent* buffer, int32_t* count, int32_t timeoutMs)
+{
+    assert(buffer != NULL);
+    assert(count != NULL);
+    assert(*count >= 0);
+
+    struct kevent* events = (struct kevent*)buffer;
+    struct timespec ts;
+    struct timespec* pTimeout = NULL;
+    if (timeoutMs >= 0)
+    {
+        ts.tv_sec = timeoutMs / 1000;
+        ts.tv_nsec = (timeoutMs % 1000) * 1000000;
+        pTimeout = &ts;
+    }
+
+    int numEvents;
+    while ((numEvents = kevent(port, NULL, 0, events, GetKeventNchanges(*count), pTimeout)) < 0 && errno == EINTR);
+    if (numEvents == -1)
+    {
+        *count = 0;
+        return SystemNative_ConvertErrorPlatformToPal(errno);
+    }
+
+    if (numEvents == 0)
+    {
+        // Timeout — no events. This is not an error.
+        *count = 0;
+        return Error_SUCCESS;
+    }
+
+    assert(numEvents <= *count);
+
+    for (int i = numEvents - 1; i >= 0; i--)
+    {
+        SocketEvent sae;
+        ConvertEventKQueueToSocketAsync(&sae, &events[i]);
+        buffer[i] = sae;
+    }
+
+    *count = numEvents;
+    return Error_SUCCESS;
+}
+#else
+static int32_t WaitForSocketEventsWithTimeoutInner(int32_t port, SocketEvent* buffer, int32_t* count, int32_t timeoutMs)
+{
+    (void)port; (void)buffer; (void)count; (void)timeoutMs;
+    return Error_ENOSYS;
+}
+#endif
+
+int32_t SystemNative_WaitForSocketEventsWithTimeout(intptr_t port, SocketEvent* buffer, int32_t* count, int32_t timeoutMs)
+{
+    if (buffer == NULL || count == NULL || *count < 0)
+    {
+        return Error_EFAULT;
+    }
+
+    int fd = ToFileDescriptor(port);
+
+    return WaitForSocketEventsWithTimeoutInner(fd, buffer, count, timeoutMs);
+}
+
+#if HAVE_EPOLL
+static int32_t TryChangeSocketEventRegistrationWithFlagsInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents, uintptr_t data, int32_t flags)
+{
+    int op = EPOLL_CTL_MOD;
+    if (currentEvents == SocketEvents_SA_NONE)
+    {
+        op = EPOLL_CTL_ADD;
+    }
+    else if (newEvents == SocketEvents_SA_NONE)
+    {
+        op = EPOLL_CTL_DEL;
+    }
+
+    struct epoll_event evt;
+    memset(&evt, 0, sizeof(struct epoll_event));
+    evt.events = GetEPollEvents(newEvents) | (unsigned int)EPOLLET;
+
+    // Apply EPOLLEXCLUSIVE if requested (only valid with EPOLL_CTL_ADD on Linux >= 4.5)
+    if ((flags & SocketEventRegistrationFlags_ExclusiveWakeup) != 0 && op == EPOLL_CTL_ADD)
+    {
+#ifdef EPOLLEXCLUSIVE
+        evt.events |= (unsigned int)EPOLLEXCLUSIVE;
+#endif
+    }
+
+    evt.data.ptr = (void*)data;
+    int err = epoll_ctl(port, op, socket, &evt);
+    return err == 0 ? Error_SUCCESS : SystemNative_ConvertErrorPlatformToPal(errno);
+}
+#elif HAVE_KQUEUE
+static int32_t TryChangeSocketEventRegistrationWithFlagsInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents, uintptr_t data, int32_t flags)
+{
+    // kqueue does not have an EPOLLEXCLUSIVE equivalent — flags parameter is ignored.
+    // kqueue naturally distributes events among waiters, so exclusive wakeup
+    // behavior is not needed.
+    (void)flags;
+    return TryChangeSocketEventRegistrationInner(port, socket, currentEvents, newEvents, data);
+}
+#else
+static int32_t TryChangeSocketEventRegistrationWithFlagsInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents, uintptr_t data, int32_t flags)
+{
+    (void)port; (void)socket; (void)currentEvents; (void)newEvents; (void)data; (void)flags;
+    return Error_ENOSYS;
+}
+#endif
+
+int32_t SystemNative_TryChangeSocketEventRegistrationWithFlags(
+    intptr_t port, intptr_t socket, int32_t currentEvents, int32_t newEvents, uintptr_t data, int32_t flags)
+{
+    const int32_t SupportedEvents = SocketEvents_SA_READ | SocketEvents_SA_WRITE | SocketEvents_SA_READCLOSE | SocketEvents_SA_CLOSE | SocketEvents_SA_ERROR;
+
+    if ((currentEvents & ~SupportedEvents) != 0 || (newEvents & ~SupportedEvents) != 0)
+    {
+        return Error_EINVAL;
+    }
+
+    int portFd = ToFileDescriptor(port);
+    int socketFd = ToFileDescriptor(socket);
+
+    if (currentEvents == newEvents && flags == 0)
+    {
+        return Error_SUCCESS;
+    }
+
+    return TryChangeSocketEventRegistrationWithFlagsInner(
+        portFd, socketFd, (SocketEvents)currentEvents, (SocketEvents)newEvents, data, flags);
+}
+
 int32_t SystemNative_PlatformSupportsDualModeIPv4PacketInfo(void)
 {
 #if HAVE_SUPPORT_FOR_DUAL_MODE_IPV4_PACKET_INFO
