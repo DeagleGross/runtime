@@ -331,6 +331,9 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetPlatformIdentifier)' != '' and '$(TargetPlatformIdentifier)' != 'windows' and '$(UseAndroidCrypto)' != 'true' and '$(UseAppleCrypto)' != 'true'">
+    <Compile Include="System\Net\Security\DirectSsl\SafeTlsContextHandle.cs" />
+    <Compile Include="System\Net\Security\DirectSsl\SafeTlsHandle.cs" />
+    <Compile Include="System\Net\Security\DirectSsl\TlsOperationStatus.cs" />
     <Compile Include="System\Net\CertificateValidationPal.Unix.cs" />
     <Compile Include="System\Net\Security\CipherSuitesPolicyPal.Linux.cs" />
     <Compile Include="System\Net\Security\SslStreamPal.Unix.cs" />
