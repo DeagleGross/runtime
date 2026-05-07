@@ -1290,32 +1290,21 @@ namespace System.Net.Sockets
             Debug.Assert(_isHandleNonBlocking);
             lock (_registerLock)
             {
-                if (_asyncEngine == null)
+                if (_asyncEngine is null)
                 {
-                    bool addedRef = false;
-                    try
+                    // SafePollHandle.Add internally does DangerousAddRef/Release,
+                    // so we pass the SafeSocketHandle directly — no manual ref management needed.
+                    if (SocketAsyncEngine.TryRegisterSocket(_socket, this, out SocketAsyncEngine? engine, out error))
                     {
-                        _socket.DangerousAddRef(ref addedRef);
-                        IntPtr handle = _socket.DangerousGetHandle();
-                        if (SocketAsyncEngine.TryRegisterSocket(handle, this, out SocketAsyncEngine? engine, out error))
-                        {
-                            Volatile.Write(ref _asyncEngine, engine);
+                        Volatile.Write(ref _asyncEngine, engine);
 
-                            Trace("Registered");
-                            return true;
-                        }
-                        else
-                        {
-                            Trace("Registration failed");
-                            return false;
-                        }
+                        Trace("Registered");
+                        return true;
                     }
-                    finally
+                    else
                     {
-                        if (addedRef)
-                        {
-                            _socket.DangerousRelease();
-                        }
+                        Trace("Registration failed");
+                        return false;
                     }
                 }
                 error = Interop.Error.SUCCESS;
