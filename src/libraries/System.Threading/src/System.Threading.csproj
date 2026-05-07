@@ -1,12 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>$(NetCoreAppCurrent)</TargetFramework>
+    <TargetFrameworks>$(NetCoreAppCurrent);$(NetCoreAppCurrent)-unix;$(NetCoreAppCurrent)-osx;$(NetCoreAppCurrent)-freebsd</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPartialFacadeAssembly>true</IsPartialFacadeAssembly>
     <ContractTypesPartiallyMoved>true</ContractTypesPartiallyMoved>
     <UseCompilerGeneratedDocXmlFile>false</UseCompilerGeneratedDocXmlFile>
     <DefineConstants Condition="'$(WasmEnableThreads)' == 'true'">$(DefineConstants);FEATURE_WASM_MANAGED_THREADS</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetPlatformIdentifier>$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)'))</TargetPlatformIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +25,23 @@
              Link="Common\System\HResults.cs" />
     <Compile Include="$(CommonPath)System\Obsoletions.cs"
              Link="Common\System\Obsoletions.cs" />
+  </ItemGroup>
+
+  <!-- SafePollHandle and supporting types (Unix only) -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'unix' or '$(TargetPlatformIdentifier)' == 'osx' or '$(TargetPlatformIdentifier)' == 'freebsd'">
+    <Compile Include="System\Threading\Polling\SafePollHandle.cs" />
+    <Compile Include="System\Threading\Polling\PollEvents.cs" />
+    <Compile Include="System\Threading\Polling\PollNotification.cs" />
+    <Compile Include="System\Threading\Polling\PollRegistrationOptions.cs" />
+    <!-- Interop: shared source from Common -->
+    <Compile Include="$(CommonPath)Interop\Unix\Interop.Libraries.cs"
+             Link="Common\Interop\Unix\Interop.Libraries.cs" />
+    <Compile Include="$(CommonPath)Interop\Unix\Interop.Errors.cs"
+             Link="Common\Interop\Unix\Interop.Errors.cs" />
+    <Compile Include="$(CommonPath)Interop\Unix\System.Native\Interop.SocketEvent.cs"
+             Link="Common\Interop\Unix\System.Native\Interop.SocketEvent.cs" />
+    <Compile Include="$(CommonPath)Interop\Unix\System.Native\Interop.PollHandle.cs"
+             Link="Common\Interop\Unix\System.Native\Interop.PollHandle.cs" />
   </ItemGroup>
 
   <ItemGroup>

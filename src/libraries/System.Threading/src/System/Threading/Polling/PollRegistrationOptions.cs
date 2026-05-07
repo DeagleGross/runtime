@@ -5,8 +5,9 @@ namespace System.Threading
 {
     /// <summary>
     /// Options for registering a handle with a <see cref="SafePollHandle"/>.
-    /// These options are immutable once a handle is registered — to change them,
-    /// remove the handle and re-add it.
+    /// These options are immutable for the lifetime of the registration — to
+    /// change them, call <see cref="SafePollHandle.Remove"/> then
+    /// <see cref="SafePollHandle.Add"/> again.
     /// </summary>
     [Flags]
     public enum PollRegistrationOptions
@@ -19,8 +20,9 @@ namespace System.Threading
         /// Intended for shared listen sockets where multiple workers each own
         /// a <see cref="SafePollHandle"/> and register the same listen socket.
         /// The kernel picks one to wake, preventing thundering herd.
-        /// <para>Supported on Linux (epoll <c>EPOLLEXCLUSIVE</c>). On platforms
-        /// where this is not supported, it is silently ignored.</para>
+        /// <para>On Linux, maps to <c>EPOLLEXCLUSIVE</c> (Linux &gt;= 4.5).
+        /// On macOS/FreeBSD (kqueue), this flag is silently ignored — kqueue
+        /// naturally distributes events among waiters.</para>
         /// </summary>
         ExclusiveWakeup = 1,
     }

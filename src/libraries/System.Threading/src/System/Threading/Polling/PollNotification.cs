@@ -6,7 +6,8 @@ using System.Runtime.InteropServices;
 namespace System.Threading
 {
     /// <summary>
-    /// Represents a single readiness notification returned by <see cref="SafePollHandle.Wait"/>.
+    /// Represents a single readiness notification returned by
+    /// <see cref="SafePollHandle.Wait"/>.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct PollNotification
@@ -14,8 +15,8 @@ namespace System.Threading
         /// <summary>
         /// Initializes a new instance of the <see cref="PollNotification"/> struct.
         /// </summary>
-        /// <param name="token">The token that was passed to <see cref="SafePollHandle.Add"/>.</param>
-        /// <param name="events">The events that occurred on the registered handle.</param>
+        /// <param name="token">The opaque token supplied to <see cref="SafePollHandle.Add"/>.</param>
+        /// <param name="events">The readiness events that occurred.</param>
         public PollNotification(IntPtr token, PollEvents events)
         {
             Token = token;
@@ -23,14 +24,14 @@ namespace System.Threading
         }
 
         /// <summary>
-        /// Gets the opaque token that was supplied when the handle was registered
-        /// with <see cref="SafePollHandle.Add"/>. Typically a <see cref="GCHandle"/>
-        /// or a small integer index.
+        /// Gets the opaque token that was supplied when the handle was registered.
+        /// Typically <c>(IntPtr)fd</c>, a <see cref="GCHandle"/>, or an index
+        /// into a side table.
         /// </summary>
         public IntPtr Token { get; }
 
         /// <summary>
-        /// Gets the events that occurred on the registered handle.
+        /// Gets the readiness events that occurred on the registered handle.
         /// </summary>
         public PollEvents Events { get; }
     }
