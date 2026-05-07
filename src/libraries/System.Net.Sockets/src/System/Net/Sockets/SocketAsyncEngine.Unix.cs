@@ -134,22 +134,24 @@ namespace System.Net.Sockets
                 context.GlobalContextIndex = index;
             }
 
-            try
+            if (!_poll.TryAdd(socketHandle, PollEvents.Read | PollEvents.Write, PollRegistrationOptions.None, context.GlobalContextIndex, out PollError pollError))
             {
-                _poll.Add(socketHandle, PollEvents.Read | PollEvents.Write, PollRegistrationOptions.None, context.GlobalContextIndex);
-                error = Interop.Error.SUCCESS;
+                error = pollError switch
+                {
+                    PollError.BadFileDescriptor => Interop.Error.EBADF,
+                    PollError.AlreadyExists => Interop.Error.EEXIST,
+                    PollError.PermissionDenied => Interop.Error.EPERM,
+                    PollError.OutOfResources => Interop.Error.ENOMEM,
+                    PollError.InvalidArgument => Interop.Error.EINVAL,
+                    _ => Interop.Error.EFAULT,
+                };
 
-                return true;
-            }
-            catch (System.IO.IOException)
-            {
-                // Map back to Interop.Error for the existing callers.
-                // TODO: In a real integration, the callers would be updated to handle IOException directly.
-                error = Interop.Error.EBADF;
                 UnregisterSocket(context);
-
                 return false;
             }
+
+            error = Interop.Error.SUCCESS;
+            return true;
         }
 
         public static void UnregisterSocket(SocketAsyncContext context)

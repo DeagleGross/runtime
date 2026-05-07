@@ -19,15 +19,14 @@ namespace System.Threading
     /// ThreadPool dispatch.
     /// </para>
     /// <para>
-    /// <see cref="Add"/>, <see cref="Modify"/>, and <see cref="Remove"/> are
+    /// <see cref="TryAdd"/>, <see cref="TryModify"/>, and <see cref="Remove"/> are
     /// thread-safe at the kernel level. <see cref="Wait"/> should be called from
     /// one thread at a time per <see cref="SafePollHandle"/> instance.
     /// </para>
     /// <para>
     /// This is a power-user API. The caller is responsible for not calling
-    /// <see cref="Modify"/> or <see cref="Remove"/> on handles that were
-    /// never registered. <see cref="Remove"/> is idempotent — it is safe to
-    /// call on an already-removed or closed handle.
+    /// <see cref="TryModify"/> or <see cref="Remove"/> on handles that were
+    /// never registered. <see cref="Remove"/> is idempotent.
     /// </para>
     /// </remarks>
     [UnsupportedOSPlatform("windows")]
@@ -41,23 +40,15 @@ namespace System.Threading
         private unsafe Interop.Sys.SocketEvent* _nativeBuffer;
         private int _nativeBufferCount;
 
-        /// <summary>
-        /// Gets a value indicating whether <see cref="SafePollHandle"/> is
-        /// supported on the current platform.
-        /// </summary>
         public static bool IsSupported =>
             OperatingSystem.IsLinux() ||
             OperatingSystem.IsMacOS() ||
             OperatingSystem.IsFreeBSD();
 
-        private SafePollHandle() : base(IntPtr.Zero, ownsHandle: true)
-        {
-        }
+        private SafePollHandle() : base(IntPtr.Zero, ownsHandle: true) { }
 
-        /// <inheritdoc/>
         public override bool IsInvalid => handle == IntPtr.Zero || handle == new IntPtr(-1);
 
-        /// <inheritdoc/>
         protected override unsafe bool ReleaseHandle()
         {
             if (_nativeBuffer is not null)
@@ -77,22 +68,7 @@ namespace System.Threading
             return true;
         }
 
-        /// <summary>
-        /// Creates a new <see cref="SafePollHandle"/> backed by the platform's
-        /// readiness polling mechanism (epoll on Linux, kqueue on macOS/FreeBSD).
-        /// </summary>
-        /// <param name="maxEventsPerWait">
-        /// The maximum number of events returned by a single <see cref="Wait"/>
-        /// call. Determines the size of the internal native event buffer.
-        /// Typical values: 64–1024.
-        /// </param>
-        /// <returns>A new <see cref="SafePollHandle"/>.</returns>
-        /// <exception cref="PlatformNotSupportedException">
-        /// <see cref="IsSupported"/> is <see langword="false"/>.
-        /// </exception>
-        /// <exception cref="IOException">
-        /// The underlying system call (<c>epoll_create1</c> or <c>kqueue</c>) failed.
-        /// </exception>
+        /// <summary>Creates a new <see cref="SafePollHandle"/>.</summary>
         public static unsafe SafePollHandle Create(int maxEventsPerWait = 256)
         {
             if (!IsSupported)
@@ -134,26 +110,14 @@ namespace System.Threading
             return pollHandle;
         }
 
-        /// <summary>
-        /// Registers a file descriptor for readiness monitoring.
-        /// </summary>
-        /// <param name="handle">
-        /// The handle to monitor. Must be a pollable file descriptor (sockets,
-        /// pipes, eventfds, timerfd, etc.). The caller retains ownership and
-        /// must keep it alive for as long as it is registered.
-        /// </param>
+        /// <summary>Attempts to register a handle for readiness monitoring.</summary>
+        /// <param name="handle">The handle to monitor.</param>
         /// <param name="events">The events to monitor for.</param>
-        /// <param name="options">
-        /// Registration options. Immutable for the lifetime of the registration —
-        /// to change them, call <see cref="Remove"/> then <see cref="Add"/> again.
-        /// </param>
-        /// <param name="state">
-        /// An opaque value echoed back in <see cref="PollNotification.State"/>
-        /// when events fire.
-        /// </param>
-        /// <exception cref="ObjectDisposedException">This handle has been disposed.</exception>
-        /// <exception cref="IOException">The underlying kernel call failed.</exception>
-        public void Add(SafeHandle handle, PollEvents events, PollRegistrationOptions options, nint state)
+        /// <param name="options">Registration options (immutable for the lifetime of the registration).</param>
+        /// <param name="state">Opaque value echoed back in <see cref="PollNotification.State"/>.</param>
+        /// <param name="error">On failure, receives the reason. On success, <see cref="PollError.None"/>.</param>
+        /// <returns><see langword="true"/> on success; <see langword="false"/> if the kernel call failed.</returns>
+        public bool TryAdd(SafeHandle handle, PollEvents events, PollRegistrationOptions options, nint state, out PollError error)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
             ArgumentNullException.ThrowIfNull(handle);
@@ -171,10 +135,8 @@ namespace System.Threading
                     data: state,
                     flags: (int)options);
 
-                if (err != Interop.Error.SUCCESS)
-                {
-                    throw CreateIOException(err);
-                }
+                error = MapError(err);
+                return err == Interop.Error.SUCCESS;
             }
             finally
             {
@@ -185,17 +147,13 @@ namespace System.Threading
             }
         }
 
-        /// <summary>
-        /// Modifies the monitored events for a previously registered handle.
-        /// Registration options cannot be changed — call <see cref="Remove"/>
-        /// then <see cref="Add"/> to change them.
-        /// </summary>
+        /// <summary>Attempts to modify the monitored events for a previously registered handle.</summary>
         /// <param name="handle">The handle whose monitored events to change.</param>
         /// <param name="events">The new set of events to monitor for.</param>
         /// <param name="state">The state to associate with this handle.</param>
-        /// <exception cref="ObjectDisposedException">This handle has been disposed.</exception>
-        /// <exception cref="IOException">The underlying kernel call failed.</exception>
-        public void Modify(SafeHandle handle, PollEvents events, nint state)
+        /// <param name="error">On failure, receives the reason. On success, <see cref="PollError.None"/>.</param>
+        /// <returns><see langword="true"/> on success; <see langword="false"/> if the kernel call failed.</returns>
+        public bool TryModify(SafeHandle handle, PollEvents events, nint state, out PollError error)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
             ArgumentNullException.ThrowIfNull(handle);
@@ -213,10 +171,8 @@ namespace System.Threading
                     data: state,
                     flags: 0);
 
-                if (err != Interop.Error.SUCCESS)
-                {
-                    throw CreateIOException(err);
-                }
+                error = MapError(err);
+                return err == Interop.Error.SUCCESS;
             }
             finally
             {
@@ -227,11 +183,7 @@ namespace System.Threading
             }
         }
 
-        /// <summary>
-        /// Removes a handle from readiness monitoring. Idempotent — safe to call
-        /// on already-removed or closed handles.
-        /// </summary>
-        /// <param name="handle">The handle to remove.</param>
+        /// <summary>Removes a handle from readiness monitoring. Idempotent.</summary>
         public void Remove(SafeHandle handle)
         {
             if (IsInvalid || IsClosed)
@@ -263,22 +215,7 @@ namespace System.Threading
             }
         }
 
-        /// <summary>
-        /// Waits for readiness events on registered handles.
-        /// </summary>
-        /// <param name="timeout">
-        /// The maximum time to wait. Use <see cref="Timeout.InfiniteTimeSpan"/>
-        /// for infinite wait, or <see cref="TimeSpan.Zero"/> for immediate check.
-        /// </param>
-        /// <returns>
-        /// A <see cref="PollWaitResult"/> that can be enumerated to access
-        /// the readiness notifications. The result reads directly from the
-        /// internal native buffer with zero copy — it is only valid until the
-        /// next call to <see cref="Wait"/>.
-        /// </returns>
-        /// <exception cref="ObjectDisposedException">This handle has been disposed.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeout"/> is negative and not infinite.</exception>
-        /// <exception cref="IOException">The underlying kernel call failed.</exception>
+        /// <summary>Waits for readiness events on registered handles.</summary>
         public unsafe PollWaitResult Wait(TimeSpan timeout)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
@@ -310,6 +247,18 @@ namespace System.Threading
 
             return new PollWaitResult(_nativeBuffer, count);
         }
+
+        private static PollError MapError(Interop.Error error) => error switch
+        {
+            Interop.Error.SUCCESS => PollError.None,
+            Interop.Error.EBADF => PollError.BadFileDescriptor,
+            Interop.Error.EEXIST => PollError.AlreadyExists,
+            Interop.Error.ENOENT => PollError.NotFound,
+            Interop.Error.EPERM => PollError.PermissionDenied,
+            Interop.Error.ENOMEM or Interop.Error.ENOSPC => PollError.OutOfResources,
+            Interop.Error.EINVAL => PollError.InvalidArgument,
+            _ => PollError.Unknown,
+        };
 
         private static IOException CreateIOException(Interop.Error error)
         {
