@@ -182,18 +182,14 @@ namespace System.Net.Sockets
         {
             try
             {
-                // Allocate a managed buffer for PollNotification results.
-                // This replaces the direct SocketEvent* buffer read.
-                PollNotification[] notifications = new PollNotification[EventBufferCount];
-
                 while (true)
                 {
-                    int numEvents = _poll.Wait(notifications, Timeout.InfiniteTimeSpan);
+                    PollWaitResult results = _poll.Wait(Timeout.InfiniteTimeSpan);
 
                     // The native shim is responsible for ensuring this condition.
-                    Debug.Assert(numEvents > 0, $"Unexpected numEvents: {numEvents}");
+                    Debug.Assert(results.Count > 0, $"Unexpected numEvents: {results.Count}");
 
-                    if (HandleSocketEvents(notifications, numEvents))
+                    if (HandleSocketEvents(results))
                     {
                         EnsureWorkerScheduled();
                     }
@@ -206,13 +202,11 @@ namespace System.Net.Sockets
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool HandleSocketEvents(PollNotification[] notifications, int numEvents)
+        private bool HandleSocketEvents(PollWaitResult results)
         {
             bool enqueuedEvent = false;
-            for (int i = 0; i < numEvents; i++)
+            foreach (PollNotification notification in results)
             {
-                ref readonly PollNotification notification = ref notifications[i];
-
                 Debug.Assert((uint)notification.State < (uint)s_registeredContexts.Length);
 
                 // The context may be null if the socket was unregistered right before the event was processed.
@@ -220,8 +214,7 @@ namespace System.Net.Sockets
 
                 if (context is not null)
                 {
-                    // Convert PollEvents back to SocketEvents for the existing SocketAsyncContext API.
-                    // The values are identical (both use Read=0x01, Write=0x02, etc.) so a direct cast works.
+                    // PollEvents and SocketEvents have identical values — direct cast.
                     Interop.Sys.SocketEvents events = (Interop.Sys.SocketEvents)(int)notification.Events;
 
                     if (context.PreferInlineCompletions)
