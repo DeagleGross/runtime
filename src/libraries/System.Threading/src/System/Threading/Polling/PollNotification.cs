@@ -15,20 +15,20 @@ namespace System.Threading
         /// <summary>
         /// Initializes a new instance of the <see cref="PollNotification"/> struct.
         /// </summary>
-        /// <param name="token">The opaque token supplied to <see cref="SafePollHandle.Add"/>.</param>
+        /// <param name="state">The opaque state supplied to <see cref="SafePollHandle.Add"/>.</param>
         /// <param name="events">The readiness events that occurred.</param>
-        public PollNotification(IntPtr token, PollEvents events)
+        public PollNotification(nint state, PollEvents events)
         {
-            Token = token;
+            State = state;
             Events = events;
         }
 
         /// <summary>
-        /// Gets the opaque token that was supplied when the handle was registered.
+        /// Gets the opaque state that was supplied when the handle was registered.
         /// Typically <c>(IntPtr)fd</c>, a <see cref="GCHandle"/>, or an index
         /// into a side table.
         /// </summary>
-        public IntPtr Token { get; }
+        public nint State { get; }
 
         /// <summary>
         /// Gets the readiness events that occurred on the registered handle.

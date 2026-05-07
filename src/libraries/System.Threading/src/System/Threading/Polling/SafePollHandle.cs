@@ -30,6 +30,12 @@ namespace System.Threading
     /// operations — both would compete for readiness notifications on the
     /// same file descriptor.
     /// </para>
+    /// <para>
+    /// This is a power-user API. The caller is responsible for not calling
+    /// <see cref="Modify"/> or <see cref="Remove"/> on handles that were
+    /// never registered. <see cref="Remove"/> is idempotent — it is safe to
+    /// call on an already-removed or closed handle.
+    /// </para>
     /// </remarks>
     [UnsupportedOSPlatform("windows")]
     [UnsupportedOSPlatform("browser")]
@@ -154,10 +160,10 @@ namespace System.Threading
         /// registration — to change them, call <see cref="Remove"/> then
         /// <see cref="Add"/> again.
         /// </param>
-        /// <param name="token">
-        /// An opaque value echoed back in <see cref="PollNotification.Token"/>
-        /// when events fire. Typically <c>(IntPtr)fd</c>, a
-        /// <see cref="GCHandle"/>, or an index into a side table.
+        /// <param name="state">
+        /// An opaque value echoed back in <see cref="PollNotification.State"/>
+        /// when events fire. Typically a <see cref="GCHandle"/>, a file
+        /// descriptor cast to <see langword="nint"/>, or an index.
         /// </param>
         /// <exception cref="ObjectDisposedException">
         /// This <see cref="SafePollHandle"/> has been disposed.
@@ -165,7 +171,7 @@ namespace System.Threading
         /// <exception cref="IOException">
         /// The underlying <c>epoll_ctl</c> or <c>kevent</c> call failed.
         /// </exception>
-        public void Add(SafeHandle handle, PollEvents events, PollRegistrationOptions options, IntPtr token)
+        public void Add(SafeHandle handle, PollEvents events, PollRegistrationOptions options, nint state)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
             ArgumentNullException.ThrowIfNull(handle);
@@ -181,7 +187,7 @@ namespace System.Threading
                     handle.DangerousGetHandle(),
                     currentEvents: (int)PollEvents.None,
                     newEvents: (int)events,
-                    data: token,
+                    data: state,
                     flags: flags);
 
                 if (err != Interop.Error.SUCCESS)
@@ -208,8 +214,8 @@ namespace System.Threading
         /// </remarks>
         /// <param name="handle">The handle whose monitored events to change.</param>
         /// <param name="events">The new set of events to monitor for.</param>
-        /// <param name="token">
-        /// The token to associate with this handle (echoed back in notifications).
+        /// <param name="state">
+        /// The state to associate with this handle (echoed back in notifications).
         /// </param>
         /// <exception cref="ObjectDisposedException">
         /// This <see cref="SafePollHandle"/> has been disposed.
@@ -217,7 +223,7 @@ namespace System.Threading
         /// <exception cref="IOException">
         /// The underlying <c>epoll_ctl</c> or <c>kevent</c> call failed.
         /// </exception>
-        public void Modify(SafeHandle handle, PollEvents events, IntPtr token)
+        public void Modify(SafeHandle handle, PollEvents events, nint state)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
             ArgumentNullException.ThrowIfNull(handle);
@@ -233,7 +239,7 @@ namespace System.Threading
                     handle.DangerousGetHandle(),
                     currentEvents: -1, // non-zero + non-None → forces EPOLL_CTL_MOD path
                     newEvents: (int)events,
-                    data: token,
+                    data: state,
                     flags: 0);
 
                 if (err != Interop.Error.SUCCESS)
@@ -254,8 +260,9 @@ namespace System.Threading
         /// Removes a handle from readiness monitoring.
         /// </summary>
         /// <remarks>
-        /// Safe to call if the handle has already been removed or closed —
-        /// the operation is idempotent.
+        /// Idempotent — safe to call if the handle has already been removed
+        /// or if the underlying file descriptor has been closed. The kernel
+        /// auto-removes closed fds from epoll/kqueue.
         /// </remarks>
         /// <param name="handle">The handle to remove.</param>
         public void Remove(SafeHandle handle)
@@ -273,14 +280,12 @@ namespace System.Threading
                 handle.DangerousAddRef(ref addedRef);
 
                 // Ignore errors — the fd may already have been removed or closed.
-                // This matches how SocketAsyncEngine handles unregistration:
-                // the kernel auto-removes closed fds from epoll/kqueue.
                 Interop.Sys.TryChangeSocketEventRegistrationWithFlags(
                     this.handle,
                     handle.DangerousGetHandle(),
                     currentEvents: -1, // non-zero → not ADD
                     newEvents: (int)PollEvents.None, // None → DEL
-                    data: IntPtr.Zero,
+                    data: 0,
                     flags: 0);
             }
             finally
@@ -300,9 +305,10 @@ namespace System.Threading
         /// events will be returned (capped by the <c>maxEventsPerWait</c>
         /// passed to <see cref="Create"/>).
         /// </param>
-        /// <param name="timeoutMs">
-        /// Timeout in milliseconds. <c>-1</c> for infinite wait; <c>0</c>
-        /// for immediate (non-blocking) check.
+        /// <param name="timeout">
+        /// The maximum time to wait. Use <see cref="Timeout.InfiniteTimeSpan"/>
+        /// for infinite wait, or <see cref="TimeSpan.Zero"/> for immediate
+        /// (non-blocking) check.
         /// </param>
         /// <returns>
         /// The number of notifications written to <paramref name="notifications"/>.
@@ -311,12 +317,31 @@ namespace System.Threading
         /// <exception cref="ObjectDisposedException">
         /// This <see cref="SafePollHandle"/> has been disposed.
         /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="timeout"/> is negative and not
+        /// <see cref="Timeout.InfiniteTimeSpan"/>.
+        /// </exception>
         /// <exception cref="IOException">
         /// The underlying <c>epoll_wait</c> or <c>kevent</c> call failed.
         /// </exception>
-        public unsafe int Wait(Span<PollNotification> notifications, int timeoutMs)
+        public unsafe int Wait(Span<PollNotification> notifications, TimeSpan timeout)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
+
+            int timeoutMs;
+            if (timeout == Timeout.InfiniteTimeSpan)
+            {
+                timeoutMs = -1;
+            }
+            else if (timeout == TimeSpan.Zero)
+            {
+                timeoutMs = 0;
+            }
+            else
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThan(timeout, TimeSpan.Zero);
+                timeoutMs = (int)Math.Min(timeout.TotalMilliseconds, int.MaxValue);
+            }
 
             int count = Math.Min(notifications.Length, _nativeBufferCount);
             if (count <= 0)
@@ -339,7 +364,7 @@ namespace System.Threading
             for (int i = 0; i < count; i++)
             {
                 notifications[i] = new PollNotification(
-                    token: _nativeBuffer[i].Data,
+                    state: _nativeBuffer[i].Data,
                     events: (PollEvents)(int)_nativeBuffer[i].Events);
             }
 
