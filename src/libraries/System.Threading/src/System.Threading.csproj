@@ -33,7 +33,7 @@
     <Compile Include="System\Threading\Polling\PollEvents.cs" />
     <Compile Include="System\Threading\Polling\PollNotification.cs" />
     <Compile Include="System\Threading\Polling\PollRegistrationOptions.cs" />
-    <Compile Include="System\Threading\Polling\PollWaitResult.cs" />
+
     <!-- Interop: shared source from Common -->
     <Compile Include="$(CommonPath)Interop\Unix\Interop.Libraries.cs"
              Link="Common\Interop\Unix\Interop.Libraries.cs" />

@@ -216,7 +216,12 @@ namespace System.Threading
         }
 
         /// <summary>Waits for readiness events on registered handles.</summary>
-        public unsafe PollWaitResult Wait(TimeSpan timeout)
+        /// <returns>
+        /// A <see cref="ReadOnlySpan{T}"/> of <see cref="PollNotification"/> backed
+        /// directly by the internal native event buffer. The span is only valid until
+        /// the next call to <see cref="Wait"/> on the same handle.
+        /// </returns>
+        public unsafe ReadOnlySpan<PollNotification> Wait(TimeSpan timeout)
         {
             ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
 
@@ -245,7 +250,8 @@ namespace System.Threading
                 throw CreateIOException(err);
             }
 
-            return new PollWaitResult(_nativeBuffer, count);
+            // PollNotification has identical layout to SocketEvent — cast directly.
+            return new ReadOnlySpan<PollNotification>(_nativeBuffer, count);
         }
 
         private static PollError MapError(Interop.Error error) => error switch

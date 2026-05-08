@@ -186,10 +186,10 @@ namespace System.Net.Sockets
             {
                 while (true)
                 {
-                    PollWaitResult results = _poll.Wait(Timeout.InfiniteTimeSpan);
+                    ReadOnlySpan<PollNotification> results = _poll.Wait(Timeout.InfiniteTimeSpan);
 
                     // The native shim is responsible for ensuring this condition.
-                    Debug.Assert(results.Count > 0, $"Unexpected numEvents: {results.Count}");
+                    Debug.Assert(results.Length > 0, $"Unexpected numEvents: {results.Length}");
 
                     if (HandleSocketEvents(results))
                     {
@@ -204,7 +204,7 @@ namespace System.Net.Sockets
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool HandleSocketEvents(PollWaitResult results)
+        private bool HandleSocketEvents(ReadOnlySpan<PollNotification> results)
         {
             bool enqueuedEvent = false;
             foreach (PollNotification notification in results)
