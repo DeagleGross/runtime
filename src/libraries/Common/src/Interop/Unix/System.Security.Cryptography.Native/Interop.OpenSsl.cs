@@ -188,13 +188,13 @@ internal static partial class Interop
             return protocols;
         }
 
-        internal static SafeSslContextHandle GetOrCreateSslContextHandle(SslAuthenticationOptions sslAuthenticationOptions, bool allowCached)
+        internal static SafeSslContextHandle GetOrCreateSslContextHandle(SslAuthenticationOptions sslAuthenticationOptions, bool allowCached, bool enableResume)
         {
             SslProtocols protocols = CalculateEffectiveProtocols(sslAuthenticationOptions);
 
             if (!allowCached)
             {
-                return AllocateSslContext(sslAuthenticationOptions, protocols, allowCached);
+                return AllocateSslContext(sslAuthenticationOptions, protocols, enableResume);
             }
 
             bool hasAlpn = sslAuthenticationOptions.ApplicationProtocols != null && sslAuthenticationOptions.ApplicationProtocols.Count != 0;
@@ -207,9 +207,9 @@ internal static partial class Interop
                 sslAuthenticationOptions.CertificateContext);
             return s_sslContexts.GetOrCreate(key, static (args) =>
             {
-                var (sslAuthOptions, protocols, allowCached) = args;
-                return AllocateSslContext(sslAuthOptions, protocols, allowCached);
-            }, (sslAuthenticationOptions, protocols, allowCached));
+                var (sslAuthOptions, protocols, enableResume) = args;
+                return AllocateSslContext(sslAuthOptions, protocols, enableResume);
+            }, (sslAuthenticationOptions, protocols, enableResume));
         }
 
         // This essentially wraps SSL_CTX* aka SSL_CTX_new + setting
@@ -409,7 +409,7 @@ internal static partial class Interop
             // When a preallocated SSL_CTX is provided (TlsContext-owned), we borrow it
             // for the duration of this method without disposing — the TlsContext keeps
             // it alive across every TlsSession it produces.
-            SafeSslContextHandle sslCtxHandle = preallocatedSslCtx ?? GetOrCreateSslContextHandle(sslAuthenticationOptions, cacheSslContext);
+            SafeSslContextHandle sslCtxHandle = preallocatedSslCtx ?? GetOrCreateSslContextHandle(sslAuthenticationOptions, cacheSslContext, cacheSslContext);
             try
             {
                 sslHandle = SafeSslHandle.Create(sslCtxHandle, sslAuthenticationOptions);
