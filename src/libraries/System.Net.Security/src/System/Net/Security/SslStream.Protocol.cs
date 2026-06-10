@@ -1248,11 +1248,6 @@ namespace System.Net.Security
                     chain.ChainPolicy.RevocationMode = sslAuthenticationOptions.CertificateRevocationCheckMode;
                     chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
 
-                    if (sslAuthenticationOptions.IsServer && !LocalAppContextSwitches.EnableServerAiaDownloads)
-                    {
-                        chain.ChainPolicy.DisableCertificateDownloads = true;
-                    }
-
                     if (trust != null)
                     {
                         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;

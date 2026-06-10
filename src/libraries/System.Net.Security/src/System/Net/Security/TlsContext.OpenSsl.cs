@@ -52,7 +52,7 @@ namespace System.Net.Security
                         // enableResume honors the AllowTlsResume option on the bag so
                         // server-side session resume works against this owned SSL_CTX.
                         bool enableResume = sessionOptions.AllowTlsResume
-                            && !LocalAppContextSwitches.DisableTlsResume
+                            && !SslStream.DisableTlsResume
                             && sessionOptions.EncryptionPolicy == EncryptionPolicy.RequireEncryption
                             && sessionOptions.CipherSuitesPolicy == null;
                         ctx = Interop.OpenSsl.GetOrCreateSslContextHandle(sessionOptions, allowCached: false, enableResume: enableResume);
