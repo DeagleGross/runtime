@@ -67,6 +67,11 @@ internal static class InteropProbe
     public static readonly Bucket SessionWrite = new();
     public static readonly Bucket SessionHandshake = new();
 
+    // Raw OpenSSL P/Invoke counters (apples-to-apples baseline vs TlsSession)
+    public static readonly Bucket OpenSslRead = new();
+    public static readonly Bucket OpenSslWrite = new();
+    public static readonly Bucket OpenSslDoHandshake = new();
+
     // Syscall counters (the same ones Tomas's bench tracks, kept compatible here)
     public static readonly Bucket SocketSend = new();
     public static readonly Bucket SocketReceive = new();
@@ -78,6 +83,7 @@ internal static class InteropProbe
         SslStreamReadAsync, SslStreamWriteAsync,
         SessionEncrypt, SessionDecrypt, SessionDrainPendingOutput, SessionProcessHandshake,
         SessionRead, SessionWrite, SessionHandshake,
+        OpenSslRead, OpenSslWrite, OpenSslDoHandshake,
         SocketSend, SocketReceive, SocketPollRead, SocketPollWrite,
     ];
 
@@ -86,6 +92,7 @@ internal static class InteropProbe
         "SslStream.ReadAsync", "SslStream.WriteAsync",
         "TlsSession.Encrypt", "TlsSession.Decrypt", "TlsSession.DrainPendingOutput", "TlsSession.ProcessHandshake",
         "TlsSession.Read", "TlsSession.Write", "TlsSession.Handshake",
+        "OpenSSL.SSL_read", "OpenSSL.SSL_write", "OpenSSL.SSL_do_handshake",
         "Socket.Send", "Socket.Receive", "Socket.Poll(Read)", "Socket.Poll(Write)",
     ];
 

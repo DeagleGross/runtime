@@ -62,6 +62,9 @@ public class PersistentRoundtripsBench
     private SslClientAuthenticationOptions _clientOptions = null!;
     private TlsContext _ctxBuffered = null!;
     private TlsContext _ctxFd = null!;
+    private IntPtr _opensslCtx;          // raw OpenSSL SSL_CTX*, owned for the lifetime of GlobalSetup→Cleanup
+    private string _certPemPath = null!; // temp file paths for SSL_CTX_use_certificate_file
+    private string _keyPemPath = null!;
     private IPEndPoint _listenerEp = null!;
     private Socket _listener = null!;
 
@@ -74,6 +77,7 @@ public class PersistentRoundtripsBench
     private SslStream? _clientSsl;
     private SslStream? _serverSsl;
     private TlsSession? _serverSession;
+    private IntPtr _opensslSsl;          // raw OpenSSL SSL*, owned for the iteration only
     private byte[] _payload = null!;
 
     [Params(SslProtocols.Tls13)]
@@ -87,7 +91,7 @@ public class PersistentRoundtripsBench
 
     // Which engine drives the server side for this iteration.
     // Selected per-benchmark; the [Benchmark] methods set this before IterationSetup runs.
-    public enum Engine { SslStream, TlsSessionBuffered, TlsSessionFd }
+    public enum Engine { SslStream, TlsSessionBuffered, TlsSessionFd, RawOpenSsl }
 
     private Engine _engine;
 
@@ -116,6 +120,12 @@ public class PersistentRoundtripsBench
         _ctxBuffered = TlsContext.Create(_serverOptions);
         _ctxFd = TlsContext.Create(_serverOptions);
 
+        // Raw OpenSSL context: build a peer SSL_CTX that mirrors the aspnetcore-side
+        // OpenSslDirect engine — TLS_server_method + PEM cert/key on disk + session cache.
+        // Done lazily so non-Linux runs (where libssl.so.3 won't load) don't crash setup
+        // before we even reach the benchmarks that need it.
+        SetupRawOpenSsl();
+
         _listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         _listener.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         _listener.Listen(128);
@@ -132,6 +142,63 @@ public class PersistentRoundtripsBench
         _ctxBuffered?.Dispose();
         _ctxFd?.Dispose();
         _cert?.Dispose();
+
+        if (_opensslCtx != IntPtr.Zero)
+        {
+            OpenSslInterop.SSL_CTX_free(_opensslCtx);
+            _opensslCtx = IntPtr.Zero;
+        }
+        try { if (!string.IsNullOrEmpty(_certPemPath) && File.Exists(_certPemPath)) File.Delete(_certPemPath); } catch { }
+        try { if (!string.IsNullOrEmpty(_keyPemPath) && File.Exists(_keyPemPath)) File.Delete(_keyPemPath); } catch { }
+    }
+
+    private void SetupRawOpenSsl()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            // Library names (libssl.so.3) are Linux-specific. Skip — the RawOpenSsl bench
+            // will throw PlatformNotSupportedException, which BDN surfaces clearly.
+            return;
+        }
+
+        try
+        {
+            OpenSslInterop.Initialize();
+        }
+        catch (DllNotFoundException)
+        {
+            // OpenSSL 3.x not installed on this host. Same behaviour as Windows path.
+            return;
+        }
+
+        // Export the self-signed cert + key to temp files (the SSL_CTX_use_*_file APIs
+        // need on-disk PEM; using BIO_new_mem_buf + PEM_read_bio_X509 instead would be
+        // strictly equivalent but adds 4 more P/Invokes for no benefit at setup time).
+        _certPemPath = Path.GetTempFileName();
+        _keyPemPath = Path.GetTempFileName();
+        File.WriteAllText(_certPemPath, _cert.ExportCertificatePem());
+        using (RSA? rsa = _cert.GetRSAPrivateKey())
+        {
+            if (rsa is null) throw new InvalidOperationException("cert has no RSA private key");
+            File.WriteAllText(_keyPemPath, rsa.ExportRSAPrivateKeyPem());
+        }
+
+        IntPtr method = OpenSslInterop.TLS_server_method();
+        if (method == IntPtr.Zero) throw new InvalidOperationException("TLS_server_method failed");
+        _opensslCtx = OpenSslInterop.SSL_CTX_new(method);
+        if (_opensslCtx == IntPtr.Zero) throw new InvalidOperationException("SSL_CTX_new failed: " + OpenSslInterop.GetLastErrorString());
+
+        if (OpenSslInterop.SSL_CTX_use_certificate_file(_opensslCtx, _certPemPath, OpenSslInterop.SSL_FILETYPE_PEM) <= 0)
+            throw new InvalidOperationException("SSL_CTX_use_certificate_file: " + OpenSslInterop.GetLastErrorString());
+        if (OpenSslInterop.SSL_CTX_use_PrivateKey_file(_opensslCtx, _keyPemPath, OpenSslInterop.SSL_FILETYPE_PEM) <= 0)
+            throw new InvalidOperationException("SSL_CTX_use_PrivateKey_file: " + OpenSslInterop.GetLastErrorString());
+        if (OpenSslInterop.SSL_CTX_check_private_key(_opensslCtx) <= 0)
+            throw new InvalidOperationException("SSL_CTX_check_private_key: " + OpenSslInterop.GetLastErrorString());
+
+        // Match aspnetcore-side OpenSslDirect: server-side session cache, 1h timeout, 20000 entries.
+        OpenSslInterop.SetSessionCacheMode(_opensslCtx, OpenSslInterop.SSL_SESS_CACHE_SERVER);
+        OpenSslInterop.SSL_CTX_set_timeout(_opensslCtx, 3600);
+        OpenSslInterop.SetSessionCacheSize(_opensslCtx, 20000);
     }
 
     // ---- Benchmark methods ----
@@ -155,6 +222,12 @@ public class PersistentRoundtripsBench
     public async Task TlsSession_Fd_Roundtrips()
     {
         await DriveFdRoundtripsAsync(_clientSsl!, _serverSession!, _serverSocket!, RequestCount, PayloadSize);
+    }
+
+    [Benchmark]
+    public async Task RawOpenSsl_Roundtrips()
+    {
+        await DriveRawOpenSslRoundtripsAsync(_clientSsl!, _opensslSsl, _serverSocket!, RequestCount, PayloadSize);
     }
 
     // ---- IterationSetup / IterationCleanup: one for each benchmark target ----
@@ -184,6 +257,17 @@ public class PersistentRoundtripsBench
         BuildConnectionAsync().GetAwaiter().GetResult();
     }
 
+    [IterationSetup(Target = nameof(RawOpenSsl_Roundtrips))]
+    public void SetupRawOpenSslConn()
+    {
+        if (_opensslCtx == IntPtr.Zero)
+            throw new PlatformNotSupportedException(
+                "RawOpenSsl_Roundtrips requires Linux with libssl.so.3 / libcrypto.so.3 installed.");
+        _engine = Engine.RawOpenSsl;
+        InteropProbe.Reset();
+        BuildConnectionAsync().GetAwaiter().GetResult();
+    }
+
     [IterationCleanup]
     public void CleanupIteration()
     {
@@ -195,6 +279,12 @@ public class PersistentRoundtripsBench
             _clientSsl?.Dispose();
             _serverSsl?.Dispose();
             _serverSession?.Dispose();
+            if (_opensslSsl != IntPtr.Zero)
+            {
+                OpenSslInterop.SSL_shutdown(_opensslSsl);
+                OpenSslInterop.SSL_free(_opensslSsl);
+                _opensslSsl = IntPtr.Zero;
+            }
             _clientStream?.Dispose();
             _serverStream?.Dispose();
             _clientSocket?.Dispose();
@@ -252,6 +342,22 @@ public class PersistentRoundtripsBench
                 Task c3 = _clientSsl.AuthenticateAsClientAsync(_clientOptions);
                 Task s3 = RunOnDedicatedThreadAsync(() => DriveFdHandshake(_serverSession, ss));
                 await Task.WhenAll(c3, s3);
+                break;
+
+            case Engine.RawOpenSsl:
+                // Blocking socket on the server side — SSL_do_handshake/SSL_read/SSL_write
+                // will block on the underlying recv/send themselves, matching the
+                // single-threaded direct-SSL pattern (no epoll, no awaitable).
+                _opensslSsl = OpenSslInterop.SSL_new(_opensslCtx);
+                if (_opensslSsl == IntPtr.Zero)
+                    throw new InvalidOperationException("SSL_new failed: " + OpenSslInterop.GetLastErrorString());
+                int fd = (int)ss.Handle;
+                if (OpenSslInterop.SSL_set_fd(_opensslSsl, fd) <= 0)
+                    throw new InvalidOperationException("SSL_set_fd failed: " + OpenSslInterop.GetLastErrorString());
+                OpenSslInterop.SSL_set_accept_state(_opensslSsl);
+                Task c4 = _clientSsl.AuthenticateAsClientAsync(_clientOptions);
+                Task s4 = RunOnDedicatedThreadAsync(() => DriveRawHandshake(_opensslSsl, ss));
+                await Task.WhenAll(c4, s4);
                 break;
         }
     }
@@ -477,6 +583,121 @@ public class PersistentRoundtripsBench
         finally
         {
             ArrayPool<byte>.Shared.Return(buf);
+        }
+    }
+
+    // -------- Raw OpenSSL P/Invoke roundtrips (apples-to-apples with aspnetcore OpenSslDirect) --------
+
+    private static async Task DriveRawOpenSslRoundtripsAsync(SslStream client, IntPtr ssl, Socket socket, int count, int size)
+    {
+        byte[] tx = new byte[size];
+        Task clientTask = ClientRoundtripsAsync(client, tx, count);
+        Task serverTask = RunOnDedicatedThreadAsync(() => RawOpenSslServerRoundtrips(ssl, socket, count, size));
+        await Task.WhenAll(clientTask, serverTask);
+    }
+
+    private static unsafe void RawOpenSslServerRoundtrips(IntPtr ssl, Socket socket, int count, int size)
+    {
+        byte[] buf = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                // Read `size` bytes via SSL_read (blocking; matches the aspnetcore OpenSslDirect pattern
+                // when the pump has already detected EPOLLIN and is calling SSL_read once).
+                int got = 0;
+                while (got < size)
+                {
+                    int n;
+                    long t = InteropProbe.Start();
+                    fixed (byte* p = &buf[got])
+                    {
+                        n = OpenSslInterop.SSL_read(ssl, p, size - got);
+                    }
+                    InteropProbe.Stop(InteropProbe.OpenSslRead, t, bytesIn: n > 0 ? n : 0, bytesOut: 0);
+
+                    if (n > 0) { got += n; continue; }
+                    int err = OpenSslInterop.SSL_get_error(ssl, n);
+                    switch (err)
+                    {
+                        case OpenSslInterop.SSL_ERROR_WANT_READ:
+                            long tp = InteropProbe.Start();
+                            socket.Poll(-1, SelectMode.SelectRead);
+                            InteropProbe.Stop(InteropProbe.SocketPollRead, tp);
+                            continue;
+                        case OpenSslInterop.SSL_ERROR_WANT_WRITE:
+                            long tpw = InteropProbe.Start();
+                            socket.Poll(-1, SelectMode.SelectWrite);
+                            InteropProbe.Stop(InteropProbe.SocketPollWrite, tpw);
+                            continue;
+                        default:
+                            throw new IOException($"SSL_read err={err}: {OpenSslInterop.GetLastErrorString()}");
+                    }
+                }
+
+                // Write `size` bytes via SSL_write.
+                int sent = 0;
+                while (sent < size)
+                {
+                    int n;
+                    long t = InteropProbe.Start();
+                    fixed (byte* p = &buf[sent])
+                    {
+                        n = OpenSslInterop.SSL_write(ssl, p, size - sent);
+                    }
+                    InteropProbe.Stop(InteropProbe.OpenSslWrite, t, bytesIn: 0, bytesOut: n > 0 ? n : 0);
+
+                    if (n > 0) { sent += n; continue; }
+                    int err = OpenSslInterop.SSL_get_error(ssl, n);
+                    switch (err)
+                    {
+                        case OpenSslInterop.SSL_ERROR_WANT_READ:
+                            long tp = InteropProbe.Start();
+                            socket.Poll(-1, SelectMode.SelectRead);
+                            InteropProbe.Stop(InteropProbe.SocketPollRead, tp);
+                            continue;
+                        case OpenSslInterop.SSL_ERROR_WANT_WRITE:
+                            long tpw = InteropProbe.Start();
+                            socket.Poll(-1, SelectMode.SelectWrite);
+                            InteropProbe.Stop(InteropProbe.SocketPollWrite, tpw);
+                            continue;
+                        default:
+                            throw new IOException($"SSL_write err={err}: {OpenSslInterop.GetLastErrorString()}");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buf);
+        }
+    }
+
+    private static void DriveRawHandshake(IntPtr ssl, Socket socket)
+    {
+        while (true)
+        {
+            long t = InteropProbe.Start();
+            int rc = OpenSslInterop.SSL_do_handshake(ssl);
+            InteropProbe.Stop(InteropProbe.OpenSslDoHandshake, t);
+
+            if (rc == 1) return; // handshake complete
+            int err = OpenSslInterop.SSL_get_error(ssl, rc);
+            switch (err)
+            {
+                case OpenSslInterop.SSL_ERROR_WANT_READ:
+                    long tp = InteropProbe.Start();
+                    socket.Poll(-1, SelectMode.SelectRead);
+                    InteropProbe.Stop(InteropProbe.SocketPollRead, tp);
+                    continue;
+                case OpenSslInterop.SSL_ERROR_WANT_WRITE:
+                    long tpw = InteropProbe.Start();
+                    socket.Poll(-1, SelectMode.SelectWrite);
+                    InteropProbe.Stop(InteropProbe.SocketPollWrite, tpw);
+                    continue;
+                default:
+                    throw new IOException($"SSL_do_handshake err={err}: {OpenSslInterop.GetLastErrorString()}");
+            }
         }
     }
 

@@ -28,6 +28,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="InteropProbe.cs" />
+    <Compile Include="OpenSslInterop.cs" />
     <!-- BenchmarkDotNet attributes are defined in netstandard2.0; the libraries
          build chain doesn't auto-reference the netstandard facade. Pull it in
          from the local targeting pack. -->

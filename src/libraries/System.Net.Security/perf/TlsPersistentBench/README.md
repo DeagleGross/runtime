@@ -88,6 +88,10 @@ The matrix is small on purpose; widen it after the first run identifies what to 
 - `TlsSession_Buffered_Roundtrips` — server uses `TlsSession.Encrypt/Decrypt` against a non-blocking socket
 - `TlsSession_Fd_Roundtrips` — server uses `TlsSession.Read/Write` on a socket bound via `SSL_set_fd`
   (Linux/FreeBSD only — throws PlatformNotSupportedException on Windows)
+- `RawOpenSsl_Roundtrips` — server uses direct `libssl.so.3` P/Invoke (`SSL_read`/`SSL_write`) on
+  a blocking socket bound via `SSL_set_fd`. This is the apples-to-apples baseline against the
+  aspnetcore-side OpenSslDirect engine that was the comparison target in the original investigation.
+  (Linux only, requires OpenSSL 3.x installed.)
 
 In every variant the client side is `SslStream` over loopback TCP. Both sides have
 `NoDelay = true`.
