@@ -111,7 +111,7 @@ internal static class InteropProbe
     {
         var sb = new StringBuilder();
         sb.Append("==== ").Append(label).AppendLine(" ====");
-        sb.AppendFormat("{0,-32} {1,>10} {2,>12} {3,>10} {4,>10} {5,>12} {6,>12}",
+        sb.AppendFormat("{0,-32} {1,10} {2,12} {3,10} {4,10} {5,12} {6,12}",
             "Bucket", "Calls", "TotalNs", "AvgNs", "MinNs", "MaxNs", "BytesIn/Out").AppendLine();
         for (int i = 0; i < s_all.Length; i++)
         {
