@@ -22,8 +22,11 @@
     <GenerateAssemblyCLSCompliantAttribute>false</GenerateAssemblyCLSCompliantAttribute>
 
     <!-- Define DEBUG_INTEROP_COUNTERS to enable per-interop call/timing counters.
-         Pass /p:DefineConstants=DEBUG_INTEROP_COUNTERS to enable. Counters are
-         no-op when not defined so default measurements stay clean. -->
+         Pass /p:EnableInteropCounters=true to enable. Counters are
+         no-op when not defined so default measurements stay clean.
+         (Do NOT use /p:DefineConstants — it globally REPLACES defines for all
+         projects in the build graph, which breaks Mono.Linker conditional code.) -->
+    <DefineConstants Condition="'$(EnableInteropCounters)' == 'true'">$(DefineConstants);DEBUG_INTEROP_COUNTERS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
