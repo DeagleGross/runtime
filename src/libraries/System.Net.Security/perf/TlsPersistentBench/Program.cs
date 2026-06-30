@@ -420,7 +420,7 @@ public class PersistentRoundtripsBench
         await Task.WhenAll(clientTask, serverTask);
     }
 
-    private static async Task ClientRoundtripsAsync(SslStream client, byte[] tx, int count)
+    internal static async Task ClientRoundtripsAsync(SslStream client, byte[] tx, int count)
     {
         byte[] rx = new byte[tx.Length];
         for (int i = 0; i < count; i++)
@@ -520,7 +520,7 @@ public class PersistentRoundtripsBench
         await Task.WhenAll(clientTask, serverTask);
     }
 
-    private static void FdServerRoundtrips(TlsSession session, Socket socket, int count, int size)
+    internal static void FdServerRoundtrips(TlsSession session, Socket socket, int count, int size)
     {
         byte[] buf = ArrayPool<byte>.Shared.Rent(size);
         try
@@ -596,7 +596,7 @@ public class PersistentRoundtripsBench
         await Task.WhenAll(clientTask, serverTask);
     }
 
-    private static unsafe void RawOpenSslServerRoundtrips(IntPtr ssl, Socket socket, int count, int size)
+    internal static unsafe void RawOpenSslServerRoundtrips(IntPtr ssl, Socket socket, int count, int size)
     {
         byte[] buf = ArrayPool<byte>.Shared.Rent(size);
         try
@@ -673,7 +673,7 @@ public class PersistentRoundtripsBench
         }
     }
 
-    private static void DriveRawHandshake(IntPtr ssl, Socket socket)
+    internal static void DriveRawHandshake(IntPtr ssl, Socket socket)
     {
         while (true)
         {
@@ -714,7 +714,7 @@ public class PersistentRoundtripsBench
         return (client, server);
     }
 
-    private static Task RunOnDedicatedThreadAsync(Action action)
+    internal static Task RunOnDedicatedThreadAsync(Action action)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var t = new Thread(() =>
@@ -768,7 +768,7 @@ public class PersistentRoundtripsBench
         }
     }
 
-    private static void DriveFdHandshake(TlsSession session, Socket socket)
+    internal static void DriveFdHandshake(TlsSession session, Socket socket)
     {
         while (true)
         {
@@ -849,7 +849,7 @@ public class PersistentRoundtripsBench
         }
     }
 
-    private static X509Certificate2 CreateSelfSignedCert()
+    internal static X509Certificate2 CreateSelfSignedCert()
     {
         using RSA rsa = RSA.Create(2048);
         var req = new CertificateRequest(
