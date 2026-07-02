@@ -112,8 +112,11 @@ internal static partial class EpollFairnessBench
             long[] readBytes = new long[connectionCount];
             long[] wantReadCounts = new long[connectionCount];
 
+            bool singleReadPerWake = Environment.GetEnvironmentVariable("SINGLE_READ") == "1";
+            bool useTlsSessionApi = Environment.GetEnvironmentVariable("USE_SESSION_API") == "1";
+            Console.WriteLine($"[EpollFairnessBench] singleReadPerWake={singleReadPerWake} useTlsSessionApi={useTlsSessionApi}");
             var pumpThread = new Thread(() =>
-                PumpLoop(pairs, readCounts, readBytes, wantReadCounts, stop.Token))
+                PumpLoop(pairs, readCounts, readBytes, wantReadCounts, stop.Token, singleReadPerWake, useTlsSessionApi))
             {
                 Name = "epoll-pump",
                 IsBackground = true,
@@ -315,7 +318,9 @@ internal static partial class EpollFairnessBench
         long[] readCounts,
         long[] readBytes,
         long[] wantReadCounts,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool singleReadPerWake,
+        bool useTlsSessionApi)
     {
         int epfd = epoll_create1(EPOLL_CLOEXEC);
         if (epfd < 0) throw new InvalidOperationException("epoll_create1 failed: errno=" + Marshal.GetLastPInvokeError());
@@ -346,11 +351,18 @@ internal static partial class EpollFairnessBench
                 IntPtr ssl = pairs[idx].RawSsl;
                 if (ssl == IntPtr.Zero) continue;
 
-                unsafe
+                if (useTlsSessionApi && pairs[idx].Session is not null)
                 {
-                    fixed (byte* buf = scratch)
+                    DrainOneSession(pairs[idx].Session!, idx, scratch, readCounts, readBytes, wantReadCounts, singleReadPerWake);
+                }
+                else
+                {
+                    unsafe
                     {
-                        DrainOne(ssl, idx, buf, scratchLen, readCounts, readBytes, wantReadCounts);
+                        fixed (byte* buf = scratch)
+                        {
+                            DrainOneRaw(ssl, idx, buf, scratchLen, readCounts, readBytes, wantReadCounts, singleReadPerWake);
+                        }
                     }
                 }
             }
@@ -359,8 +371,9 @@ internal static partial class EpollFairnessBench
         close(epfd);
     }
 
-    private static unsafe void DrainOne(IntPtr ssl, int idx, byte* buf, int bufLen,
-                                        long[] readCounts, long[] readBytes, long[] wantReadCounts)
+    private static unsafe void DrainOneRaw(IntPtr ssl, int idx, byte* buf, int bufLen,
+                                        long[] readCounts, long[] readBytes, long[] wantReadCounts,
+                                        bool singleReadPerWake)
     {
         while (true)
         {
@@ -382,10 +395,51 @@ internal static partial class EpollFairnessBench
                     }
                     return;
                 }
+                if (singleReadPerWake) return;
                 continue;
             }
             int err = OpenSslInterop.SSL_get_error(ssl, r);
             if (err == OpenSslInterop.SSL_ERROR_WANT_READ)
+            {
+                wantReadCounts[idx]++;
+                return;
+            }
+            return;
+        }
+    }
+
+    // Managed variant: uses TlsSession.Read / TlsSession.Write (the actual API path
+    // aspnetcore Hybrid Step 4/5 exercises). This is the path we want to compare
+    // against DrainOneRaw to prove/disprove per-call TlsSession overhead on
+    // WANT_READ-heavy workloads (request-response persistent conns).
+    private static void DrainOneSession(TlsSession session, int idx, byte[] scratch,
+                                        long[] readCounts, long[] readBytes, long[] wantReadCounts,
+                                        bool singleReadPerWake)
+    {
+        Span<byte> buf = scratch;
+        while (true)
+        {
+            TlsOperationStatus rstatus = session.Read(buf, out int bytesRead);
+            if (rstatus == TlsOperationStatus.Complete && bytesRead > 0)
+            {
+                readCounts[idx]++;
+                readBytes[idx] += bytesRead;
+                int off = 0;
+                while (off < bytesRead)
+                {
+                    TlsOperationStatus wstatus = session.Write(buf.Slice(off, bytesRead - off), out int written);
+                    if (wstatus == TlsOperationStatus.Complete && written > 0) { off += written; continue; }
+                    if (wstatus == TlsOperationStatus.WantWrite || wstatus == TlsOperationStatus.WantRead)
+                    {
+                        Thread.SpinWait(50);
+                        continue;
+                    }
+                    return;
+                }
+                if (singleReadPerWake) return;
+                continue;
+            }
+            if (rstatus == TlsOperationStatus.WantRead)
             {
                 wantReadCounts[idx]++;
                 return;
