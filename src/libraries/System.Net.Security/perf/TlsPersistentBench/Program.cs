@@ -28,6 +28,16 @@ public static class Program
 {
     public static void Main(string[] args)
     {
+        // --fairness <conns> <durationSec> <engine>  ->  run the epoll fairness bench and exit.
+        if (args.Length > 0 && args[0] == "--fairness")
+        {
+            int conns = args.Length > 1 ? int.Parse(args[1]) : 4;
+            int durationSec = args.Length > 2 ? int.Parse(args[2]) : 15;
+            string engine = args.Length > 3 ? args[3] : "TlsSess";
+            EpollFairnessBench.Run(conns, durationSec, engine);
+            return;
+        }
+
         // BenchmarkDotNet doesn't recognize the net11.0 moniker yet, so we run in-process.
         // For an I/O-bound persistent-roundtrip workload the difference vs out-of-process is negligible.
         IConfig config = DefaultConfig.Instance
