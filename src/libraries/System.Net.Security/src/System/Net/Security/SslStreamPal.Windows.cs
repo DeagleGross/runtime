@@ -338,7 +338,7 @@ namespace System.Net.Security
         {
             bool isServer = authOptions.IsServer;
             int protocolFlags = GetProtocolFlagsFromSslProtocols(authOptions.EnabledSslProtocols, isServer);
-            Interop.SspiCli.SCHANNEL_CRED.Flags flags = Interop.SspiCli.SCHANNEL_CRED.Flags.SCH_CRED_CACHE_ONLY_URL_RETRIEVAL_ON_CREATE;
+            Interop.SspiCli.SCHANNEL_CRED.Flags flags = authOptions.DisableCertificateDownloads ? Interop.SspiCli.SCHANNEL_CRED.Flags.SCH_CRED_CACHE_ONLY_URL_RETRIEVAL_ON_CREATE : default;
             Interop.SspiCli.CredentialUse direction;
 
             bool allowTlsResume = authOptions.AllowTlsResume && !LocalAppContextSwitches.DisableTlsResume;
@@ -412,7 +412,7 @@ namespace System.Net.Security
         {
             bool isServer = authOptions.IsServer;
             int protocolFlags = GetProtocolFlagsFromSslProtocols(authOptions.EnabledSslProtocols, isServer);
-            Interop.SspiCli.SCH_CREDENTIALS.Flags flags = Interop.SspiCli.SCH_CREDENTIALS.Flags.SCH_CRED_CACHE_ONLY_URL_RETRIEVAL_ON_CREATE;
+            Interop.SspiCli.SCH_CREDENTIALS.Flags flags = authOptions.DisableCertificateDownloads ? Interop.SspiCli.SCH_CREDENTIALS.Flags.SCH_CRED_CACHE_ONLY_URL_RETRIEVAL_ON_CREATE : default;
             Interop.SspiCli.CredentialUse direction;
 
             bool allowTlsResume = authOptions.AllowTlsResume && !LocalAppContextSwitches.DisableTlsResume;

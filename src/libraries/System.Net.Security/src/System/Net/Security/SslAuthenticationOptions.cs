@@ -291,6 +291,10 @@ namespace System.Net.Security
         internal bool IsServer { get; set; }
         internal bool IsClient => !IsServer;
         internal SslStreamCertificateContext? CertificateContext { get; set; }
+
+        // True if the user asked for no certificate downloads (AIA), either via the chain policy or via an offline certificate context.
+        internal bool DisableCertificateDownloads =>
+            CertificateChainPolicy?.DisableCertificateDownloads == true || CertificateContext?.DisableCertificateDownloads == true;
         // If true, the certificate context was created by the SslStream and
         // certificates inside should be disposed when no longer needed.
         internal bool OwnsCertificateContext { get; set; }

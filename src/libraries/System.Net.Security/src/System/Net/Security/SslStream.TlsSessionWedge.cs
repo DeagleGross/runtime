@@ -144,7 +144,8 @@ namespace System.Net.Security
                             _sslAuthenticationOptions.AllowTlsResume,
                             sendTrustList,
                             _sslAuthenticationOptions.AllowRsaPssPadding,
-                            _sslAuthenticationOptions.AllowRsaPkcs1Padding);
+                            _sslAuthenticationOptions.AllowRsaPkcs1Padding,
+                            _sslAuthenticationOptions.DisableCertificateDownloads);
                     }
                 }
             }

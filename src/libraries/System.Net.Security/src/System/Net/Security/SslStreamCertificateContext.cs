@@ -21,6 +21,12 @@ namespace System.Net.Security
         /// </summary>
         public ReadOnlyCollection<X509Certificate2> IntermediateCertificates { get; }
 
+        /// <summary>
+        /// True when the context was created with offline: true, i.e. no certificate downloads (AIA) are allowed
+        /// while building or using this chain.
+        /// </summary>
+        internal bool DisableCertificateDownloads { get; private set; }
+
         [EditorBrowsable(EditorBrowsableState.Never)]
         public static SslStreamCertificateContext Create(X509Certificate2 target, X509Certificate2Collection? additionalCertificates, bool offline)
         {
@@ -148,6 +154,7 @@ namespace System.Net.Security
             }
 
             SslStreamCertificateContext ctx = new SslStreamCertificateContext(target, new ReadOnlyCollection<X509Certificate2>(intermediates), trust);
+            ctx.DisableCertificateDownloads = offline;
 
             // On Linux, AddRootCertificate will start a background download of an OCSP response,
             // unless this context was built "offline", or this came from the internal Create(X509Certificate2)
@@ -177,7 +184,7 @@ namespace System.Net.Security
                 intermediates.Add(cert);
             }
 
-            return Create(new X509Certificate2(TargetCertificate), intermediates, trust: Trust);
+            return Create(new X509Certificate2(TargetCertificate), intermediates, offline: DisableCertificateDownloads, trust: Trust);
         }
 
         internal void ReleaseResources()

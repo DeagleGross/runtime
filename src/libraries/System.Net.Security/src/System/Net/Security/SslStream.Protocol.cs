@@ -586,7 +586,8 @@ namespace System.Net.Security
                     _sslAuthenticationOptions.AllowTlsResume,
                     sendTrustList: false,
                     _sslAuthenticationOptions.AllowRsaPssPadding,
-                    _sslAuthenticationOptions.AllowRsaPkcs1Padding);
+                    _sslAuthenticationOptions.AllowRsaPkcs1Padding,
+                    _sslAuthenticationOptions.DisableCertificateDownloads);
                 Volatile.Write(ref _cachedCredentialsHandle, cachedCredentialHandle);
 
                 // We can probably do some optimization here. If the selectedCert is returned by the delegate
@@ -742,7 +743,8 @@ namespace System.Net.Security
                                                                 _sslAuthenticationOptions.AllowTlsResume,
                                                                 sendTrustedList,
                                                                 _sslAuthenticationOptions.AllowRsaPssPadding,
-                                                                _sslAuthenticationOptions.AllowRsaPkcs1Padding);
+                                                                _sslAuthenticationOptions.AllowRsaPkcs1Padding,
+                                                                _sslAuthenticationOptions.DisableCertificateDownloads);
             Volatile.Write(ref _cachedCredentialsHandle, cachedCredentialHandle);
             if (cachedCredentialHandle != null)
             {
@@ -963,7 +965,8 @@ namespace System.Net.Security
                             _sslAuthenticationOptions.AllowTlsResume,
                             sendTrustList,
                             _sslAuthenticationOptions.AllowRsaPssPadding,
-                            _sslAuthenticationOptions.AllowRsaPkcs1Padding);
+                            _sslAuthenticationOptions.AllowRsaPkcs1Padding,
+                            _sslAuthenticationOptions.DisableCertificateDownloads);
                     }
                 }
             }
