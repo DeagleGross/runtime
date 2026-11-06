@@ -150,6 +150,11 @@ namespace System.Net.Security
                 }
             }
 
+            if (sslServerAuthenticationOptions.CertificateChainPolicy != null)
+            {
+                CertificateChainPolicy = sslServerAuthenticationOptions.CertificateChainPolicy.Clone();
+            }
+
             if (sslServerAuthenticationOptions.ServerCertificateContext != null)
             {
                 // Release any previously owned context before replacing it with the caller's context.
@@ -189,11 +194,6 @@ namespace System.Net.Security
             {
                 ServerCertSelectionDelegate = sslServerAuthenticationOptions.ServerCertificateSelectionCallback;
             }
-
-            if (sslServerAuthenticationOptions.CertificateChainPolicy != null)
-            {
-                CertificateChainPolicy = sslServerAuthenticationOptions.CertificateChainPolicy.Clone();
-            }
         }
 
         private static SslProtocols FilterOutIncompatibleSslProtocols(SslProtocols protocols)
@@ -211,7 +211,7 @@ namespace System.Net.Security
 
         internal void SetCertificateContextFromCert(X509Certificate2 certificate, bool? noOcspFetch = null)
         {
-            CertificateContext = SslStreamCertificateContext.Create(certificate, null, offline: false, null, noOcspFetch ?? true);
+            CertificateContext = SslStreamCertificateContext.Create(certificate, null, offline: CertificateChainPolicy?.DisableCertificateDownloads ?? false, null, noOcspFetch ?? true);
             OwnsCertificateContext = true;
         }
 
